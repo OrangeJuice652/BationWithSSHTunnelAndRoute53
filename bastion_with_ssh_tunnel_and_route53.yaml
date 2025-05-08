@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "EC2 Bastion Host with SSH Tunnel User"
+
+Parameters:
+  SSHPublicKey:
+    Description: SSHクライアント用公開鍵
+    Type: String
+    NoEcho: true   # 公開鍵が表示されないようにする
+
+  SSHHomeServerUserName:
+    Description: "踏み台先のホームサーバーのログインユーザー名"
+    Type: String
+
+  SSHHomeServerPrivateKey:
+    Description: "踏み台先のホームサーバーにログインするためのSSHプライベートキー名"
+    Type: String
+
+  HostedZoneName:
+    Description: "Route 53 のホストゾーン名（末尾にドット、例: example.com.）"
+    Type: String
+
+  RecordName:
+    Description: "Aレコードに設定する完全修飾ドメイン名（例: bastion.example.com.）"
+    Type: String
+
+Resources:
+  BationInstanceKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: BationInstanceKeyPair
+      PublicKeyMaterial: !Ref SSHPublicKey
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: BastionSG
+
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref BationInstanceKeyPair
+      ImageId: ami-0c02fb55956c7d316
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      Tags:
+        - Key: Name
+          Value: BastionHost
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          useradd -m tunneluser
+          mkdir -p /home/tunneluser/.ssh
+          chown tunneluser:tunneluser /home/tunneluser/.ssh
+          chmod 700 /home/tunneluser/.ssh
+
+          # パラメータから公開鍵を取得
+          echo "${SSHPublicKey}" > /home/tunneluser/.ssh/authorized_keys
+          chmod 600 /home/tunneluser/.ssh/authorized_keys
+          chown tunneluser:tunneluser /home/tunneluser/.ssh/authorized_keys
+
+          # リバースSSH先に接続するためのconfig設定追加
+          echo "Host homeserver" >> /home/tunneluser/.ssh/config
+          echo "  HostName localhost" >> /home/tunneluser/.ssh/config
+          echo "  Port 2222" >> /home/tunneluser/.ssh/config
+          echo "  User ${SSHHomeServerUserName}" >> /home/tunneluser/.ssh/config
+          echo "  IdentityFile ~/.ssh/${SSHHomeServerPrivateKey}" >> /home/tunneluser/.ssh/config
+
+  BastionDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Ref RecordName
+      Type: A
+      TTL: "300"
+      ResourceRecords:
+        - !GetAtt BastionInstance.PublicIp
+
+Outputs:
+  InstancePublicIP:
+    Description: "EC2のパブリックIP"
+    Value: !GetAtt BastionInstance.PublicIp
+
+  DNSRecordName:
+    Description: "作成されたDNSレコード"
+    Value: !Ref RecordName
+
