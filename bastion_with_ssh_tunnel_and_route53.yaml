@@ -23,6 +23,14 @@ Parameters:
     Description: "Aレコードに設定する完全修飾ドメイン名（例: bastion.example.com.）"
     Type: String
 
+  InstanceType:
+    Description: "インスタンスタイプ"
+    Type: String
+
+  ImageId:
+    Description: "AMIのID"
+    Type: String
+
 Resources:
   BationInstanceKeyPair:
     Type: AWS::EC2::KeyPair
@@ -46,9 +54,9 @@ Resources:
   BastionInstance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: !Ref InstanceType
       KeyName: !Ref BationInstanceKeyPair
-      ImageId: ami-0c02fb55956c7d316
+      ImageId: !Ref ImageId
       SecurityGroupIds:
         - !Ref BastionSecurityGroup
       Tags:
